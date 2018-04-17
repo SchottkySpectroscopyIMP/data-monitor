@@ -1,7 +1,7 @@
 # Schottky Spectroscopy Data Monitor
-The display of the acquired Schottky data in real time is of importance to monitor the experimental status, and change the machine condition accordingly whenever necessary.
-It allows for an extremely useful feedback to optimize the beam time efficiency to the maximum.
-A good data monitor system must preferably provide wit a graphical user interface to display the Schottky spectra on screen.
+The display of the acquired Schottky data in real time is of importance to monitor the experimental status, and possibly, change the machine condition accordingly whenever necessary.
+It allows for an extremely useful feedback to optimize the beam-time utilizing efficiency to the maximum.
+A good data monitoring system must preferably provide with a graphical user interface to display the Schottky spectra on screen.
 Besides, it should promptly respond to the ambient changes, whether a new file has arrived at the server or the end user has clicked a button, dragged a figure, and so on.
 
 This program watches a pre-assigned directory where all the data files reside in for any changes.
