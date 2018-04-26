@@ -13,9 +13,9 @@ from preprocessing import Preprocessing
 from processing import Processing
 from multithread import Worker
 
-class Data_Viewer(QMainWindow):
+class Data_Monitor(QMainWindow):
     '''
-    A GUI for viewing the latest data file under a designated directory both in time and frequency domains
+    A GUI for monitoring the latest data file under a designated directory, then inspecting it in both time and frequency domains
     '''
 
     fgcolor = "#23373B"
@@ -63,13 +63,15 @@ class Data_Viewer(QMainWindow):
         self.frame = 0
         self.fill_level = np.floor(np.min(self.spectrogram[self.frame])) if self.logarithm else 0
         # frequency plots --- spectrum
-        self.gSpectrum.plot((self.frequencies[:-1]+self.frequencies[1:])/2, self.spectrogram[self.frame], pen=self.orange, fillLevel=self.fill_level, fillBrush=self.orange+"80")
+        self.gSpectrum.plot((self.frequencies[:-1]+self.frequencies[1:])/2, self.spectrogram[self.frame],
+                pen=self.orange, fillLevel=self.fill_level, fillBrush=self.orange+"80")
         self.gSpectrum.setLabels(title=self.font_label("Frame # 0"),
                 left=self.font_label("Power Spectral Density"), bottom=self.font_label("Frequency − ___ MHz [kHz]"))
         self.gSpectrum.setRange(xRange=(self.frequencies[0], self.frequencies[-1]), yRange=(self.times_f[0], self.times_f[-1]))
         # frequency plots --- spectrogram
         self.img = pg.ImageItem(self.spectrogram)
-        self.img.setRect(QRectF(-(self.frequencies[-1]-self.frequencies[0])/2, self.times_f[0], self.frequencies[-1]-self.frequencies[0], self.times_f[-1]-self.times_f[0]))
+        self.img.setRect(QRectF(-(self.frequencies[-1]-self.frequencies[0])/2, self.times_f[0],
+            self.frequencies[-1]-self.frequencies[0], self.times_f[-1]-self.times_f[0]))
         self.img.setLookupTable(self.lut)
         self.gSpectrogram.addItem(self.img)
         self.gSpectrogram.setLabels(left=self.font_label("Time [s]"), bottom=self.font_label("Frequency − ___ MHz [kHz]"))
@@ -81,6 +83,9 @@ class Data_Viewer(QMainWindow):
         self.mFileList.setNameFilterDisables(False)
         self.vFileList.setModel(self.mFileList)
         self.vFileList.setRootIndex(self.mFileList.setRootPath(self.directory))
+        # acquisition parameters
+        self.wParaTable.horizontalHeader().setResizeMode(QHeaderView.ResizeToContents)
+        self.wParaTable.verticalHeader().setResizeMode(QHeaderView.Stretch)
 
     def build_connections(self):
         '''
@@ -94,7 +99,8 @@ class Data_Viewer(QMainWindow):
         self.plot_i.sigRangeChanged.connect(update_range_q)
         self.plot_q.sigRangeChanged.connect(update_range_i)
         # bind frequency plots
-        self.indicator = self.gSpectrogram.addLine(y=self.times_f[0], bounds=[self.times_f[0], self.times_f[-1]], pen=self.bgcolor, hoverPen=self.red, movable=True)
+        self.indicator = self.gSpectrogram.addLine(y=self.times_f[0], bounds=[self.times_f[0], self.times_f[-1]],
+                pen=self.bgcolor, hoverPen=self.red, movable=True)
         def on_dragged(line):
             pos = line.value()
             self.frame = int((pos - self.times_f[0]) / (self.times_f[1] - self.times_f[0]))
@@ -129,14 +135,16 @@ class Data_Viewer(QMainWindow):
             if self.gSpectrogram.sceneBoundingRect().contains(point):
                 coords = self.gSpectrogram.getViewBox().mapSceneToView(point)
                 self.crosshair_v.setValue(coords.x())
-                self.statusbar.showMessage("δf = {:.5g} kHz, t = {:.5g} s, psd = {:.5g}".format(coords.x(), self.indicator.value(), self.crosshair_h.value()))
+                self.statusbar.showMessage("δf = {:.5g} kHz, t = {:.5g} s, psd = {:.5g}"
+                        .format(coords.x(), self.indicator.value(), self.crosshair_h.value()))
         self.gSpectrogram.scene().sigMouseMoved.connect(on_moved_spectrogram)
         def on_clicked(event):
             point = event.scenePos()
             if self.gSpectrogram.sceneBoundingRect().contains(point):
                 coords = self.gSpectrogram.getViewBox().mapSceneToView(point)
                 self.indicator.setValue(coords.y())
-                self.statusbar.showMessage("δf = {:.5g} kHz, t = {:.5g} s, psd = {:.5g}".format(self.crosshair_v.value(), coords.y(), self.crosshair_h.value()))
+                self.statusbar.showMessage("δf = {:.5g} kHz, t = {:.5g} s, psd = {:.5g}"
+                        .format(self.crosshair_v.value(), coords.y(), self.crosshair_h.value()))
         self.gSpectrogram.scene().sigMouseClicked.connect(on_clicked)
         # toggle the linear or logarithmic scale, auto or manual refresh mode
         def on_toggled_scale():
@@ -189,14 +197,18 @@ class Data_Viewer(QMainWindow):
         self.data_file = data_file
         # data in time domain
         preprocessing = Preprocessing(self.directory+self.data_file, verbose=False)
-        self.span = preprocessing.span
         self.file_name = preprocessing.fname
+        self.timestamp = str(preprocessing.date_time)
+        self.ref_level = preprocessing.ref_level # dBm
+        self.sampling_rate = preprocessing.sampling_rate / 1e3 # kHz
+        self.n_sample = preprocessing.n_sample # IQ pairs
+        self.span = preprocessing.span
         self.center_frequency = preprocessing.center_frequency
         self.times_t, self.iqs = preprocessing.diagnosis(10**5, draw=False) # s, V
         # data in frequency domain, on a spin-off thread
         processing = Processing(self.directory+self.data_file)
-        worker = Worker(processing.time_average_2d, window_length=500, n_frame=-1,
-                padding_ratio=2, n_offset=0, n_average=10, estimator='p', window="kaiser", beta=14)
+        worker = Worker(processing.time_average_2d, window_length=2000, n_frame=-1,
+                padding_ratio=1, n_offset=0, n_average=10, estimator='p', window="kaiser", beta=14)
         worker.signals.result.connect(self.redraw_plots)
         self.thread_pool.start(worker)
 
@@ -212,7 +224,12 @@ class Data_Viewer(QMainWindow):
         self.spectrogram = np.log10(spectrogram) if self.logarithm else spectrogram
         self.frame = 0
         self.fill_level = np.floor(np.min(self.spectrogram[self.frame])) if self.logarithm else 0
-        self.lFileName.setText(self.file_name)
+        # acquisition parameters
+        self.wParaTable.setItem(0, 1, QTableWidgetItem(self.file_name))
+        self.wParaTable.setItem(1, 1, QTableWidgetItem(self.timestamp))
+        self.wParaTable.setItem(2, 1, QTableWidgetItem("{:g} dBm".format(self.ref_level)))
+        self.wParaTable.setItem(3, 1, QTableWidgetItem("{:g} kHz".format(self.sampling_rate)))
+        self.wParaTable.setItem(4, 1, QTableWidgetItem("{:,d}".format(self.n_sample)))
         # time plots --- in-phase
         self.plot_i.listDataItems()[0].setData(self.times_t, np.real(self.iqs))
         self.plot_i.setRange(xRange=(self.times_t[0], self.times_t[-1]), yRange=(-1, 1))
@@ -226,7 +243,8 @@ class Data_Viewer(QMainWindow):
         self.gSpectrum.setRange(xRange=(-self.span/2e3, self.span/2e3), yRange=(self.fill_level, np.max(self.spectrogram[self.frame])))
         # frequency plots --- spectrogram
         self.img.setImage(self.spectrogram)
-        self.img.setRect(QRectF(-(self.frequencies[-1]-self.frequencies[0])/2, self.times_f[0], self.frequencies[-1]-self.frequencies[0], self.times_f[-1]-self.times_f[0]))
+        self.img.setRect(QRectF(-(self.frequencies[-1]-self.frequencies[0])/2, self.times_f[0],
+            self.frequencies[-1]-self.frequencies[0], self.times_f[-1]-self.times_f[0]))
         self.gSpectrogram.setLabels(bottom=self.font_label("Frequency − {:g} MHz [kHz]".format(self.center_frequency/1e6)))
         self.gSpectrogram.setRange(xRange=(-self.span/2e3, self.span/2e3), yRange=(self.times_f[0], self.times_f[-1]))
         # reset markers
@@ -239,6 +257,6 @@ class Data_Viewer(QMainWindow):
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    data_viewer = Data_Viewer()
-    data_viewer.show()
+    data_monitor = Data_Monitor()
+    data_monitor.show()
     sys.exit(app.exec())
