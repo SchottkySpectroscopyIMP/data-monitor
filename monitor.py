@@ -176,6 +176,11 @@ class Data_Viewer(QMainWindow):
         else:
             self.mFileList.rowsInserted.connect(last_file)
             self.mFileList.rowsRemoved.connect(last_file)
+        # Ctrl+W or Ctrl+Q to quit the application
+        shortcutW = QShortcut(QKeySequence.Close, self)
+        shortcutQ = QShortcut(QKeySequence.Quit, self)
+        shortcutW.activated.connect(self.close)
+        shortcutQ.activated.connect(self.close)
 
     def prepare_data(self, data_file):
         '''
