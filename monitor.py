@@ -119,7 +119,18 @@ class Data_Monitor(QMainWindow):
             self.gSpectrogram.setXRange(*self.gSpectrum.getViewBox().viewRange()[0], padding=0)
         self.gSpectrum.sigRangeChanged.connect(update_range_spectrogram)
         self.gSpectrogram.sigRangeChanged.connect(update_range_spectrum)
-        # read coordinates at the cursor
+        # read coordinates at the cursor in time plots
+        def on_moved_i(point):
+            if self.plot_i.sceneBoundingRect().contains(point):
+                coords = self.plot_i.getViewBox().mapSceneToView(point)
+                self.statusbar.showMessage("t = {:.5g} s, i = {:.5g}".format(coords.x(), coords.y()))
+        def on_moved_q(point):
+            if self.plot_q.sceneBoundingRect().contains(point):
+                coords = self.plot_q.getViewBox().mapSceneToView(point)
+                self.statusbar.showMessage("t = {:.5g} s, q = {:.5g}".format(coords.x(), coords.y()))
+        self.plot_i.scene().sigMouseMoved.connect(on_moved_i)
+        self.plot_q.scene().sigMouseMoved.connect(on_moved_q)
+        # read coordinates at the cursor in frequency plots
         self.crosshair_h = pg.InfiniteLine(pos=self.fill_level, angle=0, pen=self.fgcolor)
         self.crosshair_v = pg.InfiniteLine(pos=0, angle=90, pen=self.fgcolor)
         self.gSpectrum.addItem(self.crosshair_h, ignoreBounds=True)
