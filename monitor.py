@@ -215,26 +215,23 @@ class Data_Monitor(QMainWindow):
         self.n_sample = preprocessing.n_sample # IQ pairs
         self.span = preprocessing.span
         self.center_frequency = preprocessing.center_frequency
-        self.times_t, self.iqs = preprocessing.diagnosis(10**5, draw=False) # s, V
-        # data in frequency domain, on a spin-off thread
+        # data in time domain, on a spin-off thread
+        worker_t = Worker(preprocessing.diagnosis, n_point=10**5, draw=False)
+        worker_t.signals.result.connect(self.redraw_time_plots)
+        self.thread_pool.start(worker_t)
+        self.statusbar.showMessage("updating...")
+        # data in frequency domain, on another thread
         processing = Processing(self.directory+self.data_file)
-        worker = Worker(processing.time_average_2d, window_length=2000, n_frame=-1,
+        worker_f = Worker(processing.time_average_2d, window_length=2000, n_frame=-1,
                 padding_ratio=1, n_offset=0, n_average=10, estimator='p', window="kaiser", beta=14)
-        worker.signals.result.connect(self.redraw_plots)
-        self.thread_pool.start(worker)
+        worker_f.signals.result.connect(self.redraw_frequency_plots)
+        self.thread_pool.start(worker_f)
 
-    def redraw_plots(self, args):
+    def redraw_time_plots(self, args):
         '''
-        redraw the in-phase and quadrature plots, as well as the frequency spectrum and spectrogram
+        redraw the in-phase and quadrature plots, and update the parameter table
         '''
-        frequencies, self.times_f, spectrogram = args[:3] # kHz, s, V^2/kHz
-        index_l = np.argmin(np.abs(frequencies+self.span/2e3))
-        index_r = np.argmin(np.abs(frequencies-self.span/2e3)) + 1
-        self.frequencies = frequencies[index_l:index_r] # kHz
-        spectrogram = spectrogram[:,index_l:index_r-1] # V^2/kHz
-        self.spectrogram = np.log10(spectrogram) if self.logarithm else spectrogram
-        self.frame = 0
-        self.fill_level = np.floor(np.min(self.spectrogram[self.frame])) if self.logarithm else 0
+        self.times_t, self.iqs = args # s, V
         # acquisition parameters
         self.wParaTable.setItem(0, 1, QTableWidgetItem(self.file_name))
         self.wParaTable.setItem(1, 1, QTableWidgetItem(self.timestamp))
@@ -247,6 +244,19 @@ class Data_Monitor(QMainWindow):
         # time plots --- quadrature
         self.plot_q.listDataItems()[0].setData(self.times_t, np.imag(self.iqs))
         self.plot_q.setRange(xRange=(self.times_t[0], self.times_t[-1]), yRange=(-1, 1))
+
+    def redraw_frequency_plots(self, args):
+        '''
+        redraw the frequency spectrum and spectrogram
+        '''
+        frequencies, self.times_f, spectrogram = args[:3] # kHz, s, V^2/kHz
+        index_l = np.argmin(np.abs(frequencies+self.span/2e3))
+        index_r = np.argmin(np.abs(frequencies-self.span/2e3)) + 1
+        self.frequencies = frequencies[index_l:index_r] # kHz
+        spectrogram = spectrogram[:,index_l:index_r-1] # V^2/kHz
+        self.spectrogram = np.log10(spectrogram) if self.logarithm else spectrogram
+        self.frame = 0
+        self.fill_level = np.floor(np.min(self.spectrogram[self.frame])) if self.logarithm else 0
         # frequency plots --- spectrum
         self.gSpectrum.listDataItems()[0].setData((self.frequencies[:-1]+self.frequencies[1:])/2, self.spectrogram[self.frame])
         self.gSpectrum.listDataItems()[0].setFillLevel(self.fill_level)
