@@ -9,7 +9,6 @@ from PyQt5.QtCore import *
 from PyQt5.QtWidgets import *
 from PyQt5.QtGui import *
 from PyQt5.uic import *
-from preprocessing import Preprocessing
 from processing import Processing
 from multithread import Worker
 
@@ -24,6 +23,7 @@ class Data_Monitor(QMainWindow):
     green   = "#1B813E"
     orange  = "#E98B2A"
     red     = "#AB3B3A"
+    data_file = '' # empty initial file
     lut = (mpl.cm.get_cmap("viridis")(np.linspace(0, 1, 256))[:,:3] * 255).astype(np.dtype("u1"))
     pg.setConfigOptions(background=bgcolor, foreground=fgcolor, antialias=True, imageAxisOrder="row-major")
     def font_label(self, string): return "<span style=font-family:RobotoCondensed;font-size:14pt>" + string + "</span>"
@@ -81,6 +81,7 @@ class Data_Monitor(QMainWindow):
         self.mFileList.setFilter(QDir.Files)
         self.mFileList.setNameFilters(["*.wvd"])
         self.mFileList.setNameFilterDisables(False)
+        self.mFileList.sort(3, Qt.DescendingOrder) # sort by the fourth column, i.e. modified time
         self.vFileList.setModel(self.mFileList)
         self.vFileList.setRootIndex(self.mFileList.setRootPath(self.directory))
         # acquisition parameters
@@ -188,7 +189,6 @@ class Data_Monitor(QMainWindow):
         def selected_file(model_index):
             self.prepare_data(model_index.data())
         def last_file(model_index):
-            self.mFileList.sort(3, Qt.DescendingOrder) # sort by the fourth column, i.e. modified time
             QTimer.singleShot(700, lambda: self.prepare_data(model_index.child(0,0).data())) # wait for file transfer completion
         if self.manual:
             self.vFileList.activated.connect(selected_file)
@@ -205,27 +205,37 @@ class Data_Monitor(QMainWindow):
         '''
         load the data in time domain from disk, and compute the frequency data
         '''
-        self.data_file = data_file
-        # data in time domain
-        preprocessing = Preprocessing(self.directory+self.data_file, verbose=False)
-        self.file_name = preprocessing.fname
-        self.timestamp = str(preprocessing.date_time)
-        self.ref_level = preprocessing.ref_level # dBm
-        self.sampling_rate = preprocessing.sampling_rate / 1e3 # kHz
-        self.n_sample = preprocessing.n_sample # IQ pairs
-        self.span = preprocessing.span
-        self.center_frequency = preprocessing.center_frequency
+        if self.data_file == data_file: # duplicate work is inadvisable
+            return
+        else:
+            self.data_file = data_file
+        processing = Processing(self.directory+self.data_file)
+        # extract acquisition parameters
+        self.file_name = processing.fname
+        self.timestamp = str(processing.date_time)
+        self.ref_level = processing.ref_level # dBm
+        self.sampling_rate = processing.sampling_rate / 1e3 # kHz
+        self.n_sample = processing.n_sample # IQ pairs
+        self.span = processing.span
+        self.center_frequency = processing.center_frequency
         # data in time domain, on a spin-off thread
-        worker_t = Worker(preprocessing.diagnosis, n_point=10**5, draw=False)
+        worker_t = Worker(super(Processing, processing).diagnosis, n_point=10**5, draw=False)
         worker_t.signals.result.connect(self.redraw_time_plots)
         self.thread_pool.start(worker_t)
-        self.statusbar.showMessage("updating...")
         # data in frequency domain, on another thread
-        processing = Processing(self.directory+self.data_file)
         worker_f = Worker(processing.time_average_2d, window_length=2000, n_frame=-1,
                 padding_ratio=1, n_offset=0, n_average=10, estimator='p', window="kaiser", beta=14)
         worker_f.signals.result.connect(self.redraw_frequency_plots)
         self.thread_pool.start(worker_f)
+        # status bar changes only if two threads both terminate
+        self.statusbar.showMessage("updating...")
+        self.working_threads = 2
+        def wait_for_finish(): 
+            if self.working_threads == 0:
+                return self.statusbar.clearMessage()
+            else:
+                QTimer.singleShot(100, wait_for_finish)
+        wait_for_finish()
 
     def redraw_time_plots(self, args):
         '''
@@ -244,6 +254,7 @@ class Data_Monitor(QMainWindow):
         # time plots --- quadrature
         self.plot_q.listDataItems()[0].setData(self.times_t, np.imag(self.iqs))
         self.plot_q.setRange(xRange=(self.times_t[0], self.times_t[-1]), yRange=(-1, 1))
+        self.working_threads -= 1
 
     def redraw_frequency_plots(self, args):
         '''
@@ -273,7 +284,7 @@ class Data_Monitor(QMainWindow):
         self.crosshair_v.setValue(0)
         self.indicator.setValue(self.times_f[0])
         self.indicator.setBounds([self.times_f[0], self.times_f[-1]])
-        self.statusbar.clearMessage()
+        self.working_threads -= 1
 
 
 if __name__ == "__main__":
