@@ -32,7 +32,8 @@ By default the file pointer points to the latest one on the list, and it automat
 To disable it, toggle the refresh mode from `auto` to `manual`, shown at the top right corner of the GUI.
 This can sometimes become convenient if one wants to browse the files at his/her interest.
 
-Lastly, the combo keys `Ctrl+W` or `Ctrl+Q` terminate the GUI.
+Lastly, the combo key `Ctrl+S` takes a screenshot and saves it to the folder `./screenshots`.
+The combo keys `Ctrl+W` or `Ctrl+Q` terminate the GUI.
 
 ## License
 This repository is licensed under the **GNU GPLv3**.

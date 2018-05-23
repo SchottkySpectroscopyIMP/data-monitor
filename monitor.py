@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # −*− coding:utf-8 −*−
 
-import sys
+import sys, os
 import numpy as np
 import pyqtgraph as pg
 import matplotlib as mpl
@@ -9,6 +9,7 @@ from PyQt5.QtCore import *
 from PyQt5.QtWidgets import *
 from PyQt5.QtGui import *
 from PyQt5.uic import *
+from datetime import datetime
 from processing import Processing
 from multithread import Worker
 
@@ -200,6 +201,17 @@ class Data_Monitor(QMainWindow):
         shortcutQ = QShortcut(QKeySequence.Quit, self)
         shortcutW.activated.connect(self.close)
         shortcutQ.activated.connect(self.close)
+        # Ctrl+S to take a screenshot
+        def screenShot():
+            timestamp = datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
+            fname = '_'.join(["screenshot", self.file_name[:-4], timestamp])
+            if not os.path.isdir("./screenshots"):
+                os.mkdir("./screenshots")
+                self.statusbar.showMessage("`./screenshots` created")
+            self.grab(QRect(0,0,-1,-1)).save("./screenshots/" + fname + ".png")
+            self.statusbar.showMessage('`' + fname + ".png` saved")
+        shortcutS = QShortcut(QKeySequence.Save, self)
+        shortcutS.activated.connect(screenShot)
 
     def prepare_data(self, data_file):
         '''
@@ -219,7 +231,7 @@ class Data_Monitor(QMainWindow):
         self.span = processing.span
         self.center_frequency = processing.center_frequency
         # data in time domain, on a spin-off thread
-        worker_t = Worker(super(Processing, processing).diagnosis, n_point=10**5, draw=False)
+        worker_t = Worker(super(Processing, processing).diagnosis, n_point=processing.n_buffer, draw=False)
         worker_t.signals.result.connect(self.redraw_time_plots)
         self.thread_pool.start(worker_t)
         # data in frequency domain, on another thread
