@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # −*− coding:utf-8 −*−
 
+import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import xml.etree.ElementTree as ET
@@ -61,7 +62,7 @@ class Preprocessing(object):
             root = ET.fromstring(tiq.read(self.n_offset))
         def get_value(key):
             return next(root[0][0].iter(prefix + key)).text
-        self.date_time = np.datetime64(get_value("DateTime"))
+        self.date_time = np.datetime64(pd.Timestamp(get_value("DateTime")).tz_convert('UTC').tz_localize(None))
         self.data_format = np.dtype(get_value("NumberFormat").lower()).newbyteorder(get_value("Endian").lower())
         self.ref_level = float(get_value("ReferenceLevel")) # dBm
         self.center_frequency = float(get_value("Frequency")) # Hz
