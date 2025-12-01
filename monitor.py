@@ -28,7 +28,7 @@ class Data_Monitor(QMainWindow):
     pg.setConfigOptions(background=bgcolor, foreground=fgcolor, antialias=True, imageAxisOrder="row-major")
     def font_label(self, string): return "<span style=font-family:RobotoCondensed;font-size:14pt>" + string + "</span>"
 
-    def __init__(self, directory="/home/Data/"):
+    def __init__(self, directory="D:/Schottky/test/8007_TestMode_25-11-27_16-39-05/"):
         '''
         paint the user interface and establish the signal-socket connections
         directory:      location to be sought for data files
@@ -79,7 +79,7 @@ class Data_Monitor(QMainWindow):
         # file list
         self.mFileList = QFileSystemModel()
         self.mFileList.setFilter(QDir.Files)
-        self.mFileList.setNameFilters(["*.wvd", "*.tiq", "*.TIQ"])
+        self.mFileList.setNameFilters(["*.wvd", "*.tiq", "*.TIQ","*.tdms", "*.data"])
         self.mFileList.setNameFilterDisables(False)
         self.mFileList.sort(3, Qt.DescendingOrder) # sort by the fourth column, i.e. modified time
         self.vFileList.setModel(self.mFileList)
@@ -223,7 +223,7 @@ class Data_Monitor(QMainWindow):
         worker_t.signals.result.connect(self.redraw_time_plots)
         self.thread_pool.start(worker_t)
         # data in frequency domain, on another thread
-        if self.n_sample <= 6.25e7: # number of IQ pairs <= 62.5M (data filesize <= 500MB), showing the full spectrum
+        if self.n_sample <= 2.7e8: # number of IQ pairs <= 62.5M (data filesize <= 500MB), showing the full spectrum
             worker_f = Worker(processing.time_average_2d, window_length=2000, n_frame=-1,
                     padding_ratio=1, n_offset=0, n_average=10, estimator='p', window="kaiser", beta=14)
         else:
@@ -252,6 +252,9 @@ class Data_Monitor(QMainWindow):
         self.wParaTable.setItem(2, 1, QTableWidgetItem("{:g} dBm".format(self.ref_level)))
         self.wParaTable.setItem(3, 1, QTableWidgetItem("{:g} kHz".format(self.sampling_rate)))
         self.wParaTable.setItem(4, 1, QTableWidgetItem("{:,d}".format(self.n_sample)))
+        self.wParaTable.setItem(2, 1, QTableWidgetItem("{:g} dBm".format(self.ref_level) 
+                                                   if self.ref_level is not None and not np.isnan(self.ref_level) 
+                                                   else "N/A"))
         # time plots --- in-phase
         self.plot_i.listDataItems()[0].setData(self.times_t, np.real(self.iqs))
         self.plot_i.setRange(xRange=(self.times_t[0], self.times_t[-1]), yRange=(-1, 1))
