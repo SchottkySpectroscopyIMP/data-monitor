@@ -9,13 +9,13 @@ from typing import List, Dict, Tuple
 from datetime import datetime, timedelta
 import json, sys, os.path, struct, warnings, re
 
-def read_sua_header128(header_data):
+def read_sua_header256(header_data):
     '''
-    read SUA format file with 128-byte header
+    read SUA format file with 256-byte header
     '''
-    if len(header_data) < 128:
-        raise ValueError("Header data must be at least 128 bytes")
-    fields = struct.unpack('<IIIBBHHHIBIBH32s16I', header_data[:128])
+    if len(header_data) < 256:
+        raise ValueError("Header data must be at least 256 bytes")
+    fields = struct.unpack('<IIIBBHHHIBIBH56I', header_data[:256])
     header = {
         'magic': fields[0],         # 0x01DCEF18
         'prt_count': fields[1],
@@ -30,10 +30,10 @@ def read_sua_header128(header_data):
         'total_len': fields[10],
         'reserved1': fields[11],
         'reserved2': fields[12],
-        'comment': fields[13].decode(errors='ignore').strip('\x00'),
+        #'comment': fields[13].decode(errors='ignore').strip('\x00'),
     }
-    for i in range(16):
-        header[f'ext_field_{i}'] = fields[14 + i]
+    for i in range(56):
+        header[f'ext_field_{i}'] = fields[13 + i]
     return header
 data_type_map = {3: np.int8, 5: np.int16, 6: np.int16} # 6: QI pairing, each for int16
 
@@ -76,8 +76,16 @@ class Preprocessing(object):
             self.file_format = "tiq"
             self.extract_tiq()
         elif self.fname[-4:].lower() == "tdms":
-            self.file_format = "tdms"
-            self.extract_tdms()
+            with TdmsFile.open('/'.join((self.fpath, self.fname))) as tdms:
+                if ('niRF' in [group.name for group in tdms.groups()]):
+                    self.file_format = "ni_tdms"
+                    self.extract_ni_tdms()
+                elif ('RecordHeader' in [group.name for group in tdms.groups()]):
+                    self.file_format = "tdms"
+                    self.extract_tdms()
+                else:
+                    print("Error: illegal .tdms file format!\nPlease check your .tdms file first!")
+                    sys.exit()
         elif self.fname[-4:].lower() == "data":
             self.file_format = "data"
             self.extract_data()
@@ -142,13 +150,36 @@ class Preprocessing(object):
             for chunk in tdms.data_chunks():
                 self.n_sample += len(chunk['RecordData']['I'])
 
+    def extract_ni_tdms(self):
+        '''
+        extract the metadata from the .tdms file from NI test
+        '''
+        with TdmsFile.open('/'.join((self.fpath, self.fname))) as tdms:
+            _match = re.search(r'(\d{8})_(\d{2}-\d{2}-\d{2})', self.fname)
+            if _match:
+                date_str = _match.group(1)
+                time_str = _match.group(2)
+                datetime_str = "{:}-{:}-{:}".format(date_str[:4],date_str[4:6],date_str[6:]) + 'T' + time_str.replace('-', ':')
+            self.date_time = np.datetime64(datetime_str)
+            self.span = tdms['niRF']['niRF_iq'].properties['Sample Rate'] # Hz 
+            self.sampling_rate = tdms['niRF']['niRF_iq'].properties['Sample Rate'] # Hz
+            self.ref_level = tdms['niRF']['niRF_iq'].properties['Ref Level(dBm)'] # dBm
+            self.data_format = 'int14'
+            self.gain = tdms['niRF']['niRF_iq'].properties['IQ Gain']
+            self.center_frequency = tdms['niRF']['niRF_iq'].properties['Fc(Hz)'] # Hz
+            self.n_sample = 0
+            for chunk in tdms.data_chunks():
+                self.n_sample += len(chunk['niRF']['niRF_iq'])
+            self.n_sample = int(self.n_sample/2)
+
+
     def extract_data(self):
         '''
         extract the metadata from the .data file collected by puyuan device
         '''
-        self.n_offset = 128 
+        self.n_offset = 256 
         with open('/'.join((self.fpath, self.fname)), 'rb') as f:
-            header_data = read_sua_header128(f.read(self.n_offset))
+            header_data = read_sua_header256(f.read(self.n_offset))
         self.packet_len = header_data['packet_len']
         self.data_format = data_type_map.get(header_data['data_type'])
         self.n_sample = os.path.getsize('/'.join((self.fpath, self.fname))) // self.packet_len * ((self.packet_len - self.n_offset) // self.data_format().itemsize // 2) 
@@ -156,7 +187,6 @@ class Preprocessing(object):
         self.span = self.sampling_rate * 0.8
         self.gain = 1.0
         self.center_frequency = 308e6
-        self.ref_level = 0
         try:
             file_ind = int(re.match(r'ch2_(\d+)\.data', self.fname).group(1))
             self.date_time = np.datetime64(int(extract_and_convert_time_from_dataFile(self.fpath) + file_ind * self.n_sample / self.sampling_rate * 1e9), 'ns')
@@ -218,7 +248,7 @@ class Preprocessing(object):
                 sua.seek(packet_start*self.packet_len)
                 data_buffer = np.frombuffer(sua.read(packet_count*self.packet_len), dtype=self.data_format)
             actual_packet_num = data_buffer.size // (self.packet_len // self.data_format().itemsize)
-            data = np.hstack(data_buffer.reshape(actual_packet_num, -1)[:, self.n_offset//self.data_format().itemsize:])[2*(offset-packet_start*packet_size_for_data):2*(size+offset-packet_start*packet_size_for_data)].reshape(size,2)[:,:2].flatten().astype(float).view(complex) * self.gain
+            data = np.hstack(data_buffer.reshape(actual_packet_num, -1)[:, self.n_offset//self.data_format().itemsize:])[2*(offset-packet_start*packet_size_for_data):2*(size+offset-packet_start*packet_size_for_data)].reshape(size,2)[:,:2].flatten().astype(float).view(complex).conj() * self.gain # QIQIQI structure
         else: # for tdms
             def data_return(_chunk, _offset, _total_size):
                 if _offset >= len(_chunk):
@@ -229,17 +259,30 @@ class Preprocessing(object):
                     return 0, _total_size, _chunk[_offset:]
                 else:
                     return 0, 0, _chunk[_offset:_offset+_total_size]
-            with TdmsFile.open('/'.join((self.fpath, self.fname))) as tdms:
-                I_data, Q_data = [], []
-                I_offset, Q_offset, I_total_size, Q_total_size = offset, offset, size*decimating_factor, size*decimating_factor
-                for chunk in tdms.data_chunks():
-                    I_offset, I_total_size, _I_data = data_return(chunk['RecordData']['I'], I_offset, I_total_size)
-                    I_data.append(_I_data)
-                    Q_offset, Q_total_size, _Q_data = data_return(chunk['RecordData']['Q'], Q_offset, Q_total_size)
-                    Q_data.append(_Q_data)
-                    if I_total_size == 0 and Q_total_size == 0:
-                        data = (np.hstack(I_data)[::decimating_factor] + 1j * np.hstack(Q_data)[::decimating_factor]) * self.gain # V
-                        break
+            if self.file_format == 'tdms':
+                with TdmsFile.open('/'.join((self.fpath, self.fname))) as tdms:
+                    I_data, Q_data = [], []
+                    I_offset, Q_offset, I_total_size, Q_total_size = offset, offset, size*decimating_factor, size*decimating_factor
+                    for chunk in tdms.data_chunks():
+                        I_offset, I_total_size, _I_data = data_return(chunk['RecordData']['I'], I_offset, I_total_size)
+                        I_data.append(_I_data)
+                        Q_offset, Q_total_size, _Q_data = data_return(chunk['RecordData']['Q'], Q_offset, Q_total_size)
+                        Q_data.append(_Q_data)
+                        if I_total_size == 0 and Q_total_size == 0:
+                            data = (np.hstack(I_data)[::decimating_factor] + 1j * np.hstack(Q_data)[::decimating_factor]) * self.gain # V
+                            break
+            elif self.file_format == 'ni_tdms':
+                with TdmsFile.open('/'.join((self.fpath, self.fname))) as tdms:
+                    IQ_data = []
+                    IQ_offset, IQ_total_size = offset*2, 2*size*decimating_factor
+                    for chunk in tdms.data_chunks():
+                        IQ_offset, IQ_total_size, _IQ_data = data_return(chunk['niRF']['niRF_iq'], IQ_offset, IQ_total_size)
+                        IQ_data.append(_IQ_data)
+                        if IQ_total_size == 0:
+                            data = np.hstack(IQ_data).reshape(size,2*decimating_factor)[:,:2].flatten().astype(float).view(complex) * self.gain # V
+                            break
+            else:
+                pass
         if draw:
             self.draw(times, data)
         else:
