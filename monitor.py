@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # −*− coding:utf-8 −*−
 
-import sys
+import sys, os, time
 import numpy as np
 import pyqtgraph as pg
 import matplotlib as mpl
@@ -11,6 +11,45 @@ from PyQt5.QtGui import *
 from PyQt5.uic import *
 from processing import Processing
 from multithread import Worker
+
+class FileCompletionChecker(QObject):
+    file_ready = pyqtSignal(str)
+    check_interval = 200
+    stability_checks = 3
+
+    def __init__(self, target_filePath, parent=None):
+        super().__init__(parent)
+        self._target_filePath = target_filePath
+        self._last_size = -1
+        self._stable_count = 0
+        self._timer = QTimer(self)
+        self._timer.timeout.connect(self._check_file_status)
+
+    def start_checking(self):
+        self._last_size = -1
+        self._stable_count = 0
+        self._timer.start(self.check_interval)
+
+    def stop_checking(self):
+        self._timer.stop()
+
+    def _check_file_status(self):
+        if not os.path.exists(self._target_filePath):
+            self._last_size = -1
+            self._stable_count = 0
+            return
+        current_size = os.path.getsize(self._target_filePath)
+
+        if current_size == self._last_size:
+            self._stable_count += 1
+            if self._stable_count >= self.stability_checks:
+                self.stop_checking()
+                dirname, filename = os.path.split(self._target_filePath)
+                self.file_ready.emit(filename)
+        else:
+            self._last_size = current_size
+            self._stable_count = 0
+        
 
 class Data_Monitor(QMainWindow):
     '''
@@ -185,17 +224,33 @@ class Data_Monitor(QMainWindow):
                 self.vFileList.activated.connect(selected_file)
                 self.mFileList.rowsInserted.disconnect(last_file)
                 self.mFileList.rowsRemoved.disconnect(last_file)
+                if self.active_file_checker:
+                    self.active_file_checker.stop_checking()
+                    self.active_file_checker = None
             else:
                 self.vFileList.clearSelection()
                 self.vFileList.activated.disconnect(selected_file)
                 self.mFileList.rowsInserted.connect(last_file)
                 self.mFileList.rowsRemoved.connect(last_file)
+                last_file(None)
+        self.active_file_checker = None
         self.rAuto.toggled.connect(on_toggled_refresh)
         # select a file for analysis
         def selected_file(model_index):
+            if self.active_file_checker:
+                self.active_file_checker.stop_checking()
+                self.active_file_checker = None
             self.prepare_data(model_index.data())
         def last_file(model_index):
-            QTimer.singleShot(700, lambda: self.prepare_data(model_index.child(0,0).data())) # wait for file transfer completion
+            if self.active_file_checker:
+                self.active_file_checker.stop_checking()
+                self.active_file_checker = None
+            lastest_filename = model_index.child(0,0).data()
+            lastest_filePath = self.directory + lastest_filename
+            self.active_file_checker = FileCompletionChecker(lastest_filePath)
+            self.active_file_checker.file_ready.connect(self.prepare_data)
+            self.active_file_checker.start_checking()
+
         if self.manual:
             self.vFileList.activated.connect(selected_file)
         else:
