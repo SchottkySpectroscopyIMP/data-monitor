@@ -35,5 +35,9 @@ This can sometimes become convenient if one wants to browse the files at his/her
 Lastly, the combo key `Ctrl+S` takes a screenshot and saves it to the folder `./screenshots`.
 The combo keys `Ctrl+W` or `Ctrl+Q` terminate the GUI.
 
+## Addition
+- `monitor.py`: Using `QStandardItemModel` for Filelist showing. As the Linux system can only access the NAS mount point and cannot retrieve the file list on the NAS, it is necessary to bypass `inotify` and employ a more universal polling-based mechanism to obtain the list.
+- `monitor-win.py`: Basic `QFileSystemModel` for Filelist showing. Working fine in Windows system, because the Windows invokes `ReadDirectoryChangesW` API to read file list.
+
 ## License
 This repository is licensed under the **GNU GPLv3**.
