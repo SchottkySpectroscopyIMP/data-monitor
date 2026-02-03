@@ -12,44 +12,6 @@ from PyQt5.uic import *
 from processing import Processing
 from multithread import Worker
 
-class FileCompletionChecker(QObject):
-    file_ready = pyqtSignal(str)
-    check_interval = 200
-    stability_checks = 3
-
-    def __init__(self, target_filePath, parent=None):
-        super().__init__(parent)
-        self._target_filePath = target_filePath
-        self._last_size = -1
-        self._stable_count = 0
-        self._timer = QTimer(self)
-        self._timer.timeout.connect(self._check_file_status)
-
-    def start_checking(self):
-        self._last_size = -1
-        self._stable_count = 0
-        self._timer.start(self.check_interval)
-
-    def stop_checking(self):
-        self._timer.stop()
-
-    def _check_file_status(self):
-        if not os.path.exists(self._target_filePath):
-            self._last_size = -1
-            self._stable_count = 0
-            return
-        current_size = os.path.getsize(self._target_filePath)
-
-        if current_size == self._last_size:
-            self._stable_count += 1
-            if self._stable_count >= self.stability_checks:
-                self.stop_checking()
-                self.file_ready.emit(os.path.basename(self._target_filePath))
-        else:
-            self._last_size = current_size
-            self._stable_count = 0
-        
-
 class Data_Monitor(QMainWindow):
     '''
     A GUI for monitoring the latest data file under a designated directory, then inspecting it in both time and frequency domains
@@ -214,7 +176,7 @@ class Data_Monitor(QMainWindow):
         self.rLin.toggled.connect(on_toggled_scale)
         # recreate file list for NAS reader at Linux server
         self.file_filters = ["*.wvd", "*.tiq", "*.TIQ", "*.tdms", "*.data"]
-        self._current_files_info = {} # format: {filepath: (size, mtime)}
+        self._current_files_info = {}
         # timer configure for refreshing file list
         def on_polling_timeout():
             scan_and_update_model()
@@ -224,8 +186,7 @@ class Data_Monitor(QMainWindow):
                 pass
         def scan_and_update_model():
             '''scaning directory, update QStandardItemModel'''
-            current_scan_files_info = {}
-            found_files_in_dir = set()
+            current_scan_files_on_disk = {} # {filepath: {'size': int, 'mtime': QDateTime}}
             try:
                 # iter directory
                 for entry_name in os.listdir(self.directory):
@@ -240,56 +201,63 @@ class Data_Monitor(QMainWindow):
                             continue
                         # acquire file infos
                         file_info = QFileInfo(filepath)
-                        size = file_info.size() 
-                        mtime_qdatetime = file_info.lastModified()
-                        current_scan_files_info[filepath] = (size, mtime_qdatetime)
-                        found_files_in_dir.add(filepath)
+                        if not file_info.exists():
+                            return
+                        current_scan_files_on_disk[filepath] = {
+                            'size': file_info.size(), 
+                            'mtime': file_info.lastModified()}
             except OSError as e:
                 print(f"Can't scan directory '{self.directory}': {e}")
                 return
-            existing_items = {} # {filepath: QStandardItem}
-            for row in range(self.mFileList.rowCount()):
-                item = self.mFileList.item(row, 0)
-                if item:
-                    existing_items[item.data(Qt.UserRole)] = item
-            new_items_to_add = []
-            updated_items = []
-            # comparing old infos with the new, update model
+            # remove files not exist 
             files_to_remove = []
-            for filepath in existing_items.keys():
-                if filepath not in found_files_in_dir:
+            for filepath in self._current_files_info.keys():
+                if filepath not in current_scan_files_on_disk:
                     files_to_remove.append(filepath)
             for filepath in files_to_remove:
-                existing_items.pop(filepath)
-                self._current_files_info.pop(filepath, None)
-            # modifing the files
-            for filepath, (size, mtime_qdatetime) in current_scan_files_info.items():
-                if filepath not in existing_items:
-                    filename_item = QStandardItem(os.path.basename(filepath))
-                    filename_item.setData(filepath, Qt.UserRole)
-                    filename_item.setData(mtime_qdatetime, Qt.UserRole+1)
-                    new_items_to_add.append((filepath, filename_item))
-                    self._current_files_info[filepath] = (size, mtime_qdatetime)
+                self._current_files_info.pop(filepath)
+            # update file info and status
+            for filepath, disk_info in current_scan_files_on_disk.items():
+                current_size = disk_info['size']
+                current_mtime = disk_info['mtime']
+                if filepath not in self._current_files_info:
+                    self._current_files_info[filepath] = {
+                        'size': current_size,
+                        'mtime': current_mtime,
+                        'status': 'new'}
                 else:
-                    # checking if file is modified (size or mtime)
-                    old_size, old_mtime = self._current_files_info[filepath]
-                    if old_size != size or old_mtime != mtime_qdatetime:
-                        item = existing_items[filepath]
-                        item.setText(os.path.basename(filepath))
-                        item.setData(mtime_qdatetime, Qt.UserRole+1)
-                        updated_items.append((filepath, item))
-                        self._current_files_info[filepath] = (size, mtime_qdatetime)
+                    cached_info = self._current_files_info[filepath]
+                    old_size = cached_info['size']
+                    old_mtime = cached_info['mtime']
+                    if current_size > old_size:
+                        cached_info['size'] = current_size
+                        cached_info['mtime'] = current_mtime
+                        cached_info['status'] = 'growing'
+                    elif current_size < old_size:
+                        cached_info['size'] = current_size
+                        cached_info['mtime'] = current_mtime
+                        cached_info['status'] = 'new'
+                    elif current_size == old_size and current_mtime != old_mtime:
+                        cached_info['size'] = current_size
+                        cached_info['mtime'] = current_mtime
+                        cached_info['status'] = 'new'
+                    else:
+                        cached_info['status'] = 'stable'
+
             # arrange model
-            all_display_items = []
-            for filepath, (size, mtime_qdatetime) in self._current_files_info.items():
-                all_display_items.append((filepath, os.path.basename(filepath), mtime_qdatetime))
-            all_display_items.sort(key=lambda x: x[2], reverse=True)
+            current_model_data = []
+            for filepath, info in self._current_files_info.items():
+                current_model_data.append((filepath, os.path.basename(filepath), info['mtime'], info['status']))
+            current_model_data.sort(key=lambda x: x[2], reverse=True)
             self.mFileList.clear()
             self.mFileList.setHeaderData(0, Qt.Horizontal, "filename")
-            for filepath, filename, mtime_qdatetime in all_display_items:
+            for filepath, filename, mtime_qdatetime, status in current_model_data:
                 item = QStandardItem(filename)
                 item.setData(filepath, Qt.UserRole)
                 item.setData(mtime_qdatetime, Qt.UserRole+1)
+                item.setData(status, Qt.UserRole+2)
+                if status != 'stable':
+                    item.setForeground(QColor("crimson"))
                 self.mFileList.appendRow(item)
 
         self.refresh_interval_ms = 2000 # [ms]
@@ -300,9 +268,6 @@ class Data_Monitor(QMainWindow):
             self.manual = self.rManual.isChecked()
             if self.manual:
                 self.vFileList.activated.connect(selected_file)
-                if self.active_file_checker:
-                    self.active_file_checker.stop_checking()
-                    self.active_file_checker = None
             else:
                 self.vFileList.clearSelection()
                 try:
@@ -312,44 +277,34 @@ class Data_Monitor(QMainWindow):
                 last_file(None)
             if not self.polling_timer.isActive():
                 self.polling_timer.start(self.refresh_interval_ms)
-        self.active_file_checker = None
-        self.manual = False
         scan_and_update_model()
         self.rAuto.setChecked(True)
         self.rAuto.toggled.connect(on_toggled_refresh)
         # select a file for analysis
         def selected_file(model_index):
+            if not model_index.isValid():
+                return
             item = self.mFileList.itemFromIndex(model_index)
             if item:
                 filepath = item.data(Qt.UserRole)
                 if filepath:
-                    if self.active_file_checker:
-                        self.active_file_checker.stop_checking()
-                        self.active_file_checker = None
-            self.prepare_data(os.path.basename(filepath))
+                    self.prepare_data(os.path.basename(filepath))
         def last_file(model_index):
-            if self.active_file_checker:
-                self.active_file_checker.stop_checking()
-                self.active_file_checker = None
-            if self.mFileList == 0:
+            if self.mFileList.rowCount() == 0:
+                print("DEBUG: no valid file")
                 return
-            latest_filepath = None
-            latest_mtime = 0
+            next_filepath_to_process = None
             for row in range(self.mFileList.rowCount()):
                 item = self.mFileList.item(row, 0)
                 if item:
-                    path = item.data(Qt.UserRole)
-                    if path:
-                        file_info = QFileInfo(path)
-                        if file_info.lastModified().toSecsSinceEpoch() > latest_mtime:
-                            latest_mtime = file_info.lastModified().toSecsSinceEpoch()
-                            latest_filepath = path
-            if not latest_filepath:
+                    filepath = item.data(Qt.UserRole)
+                    status = item.data(Qt.UserRole+2)
+                    if filepath and status == 'stable':
+                        next_filepath_to_process = filepath
+                        break
+            if not next_filepath_to_process:
                 return
-            latest_filename = os.path.basename(latest_filepath)
-            self.active_file_checker = FileCompletionChecker(latest_filepath)
-            self.active_file_checker.file_ready.connect(self.prepare_data)
-            self.active_file_checker.start_checking()
+            self.prepare_data(os.path.basename(next_filepath_to_process))
         if not self.rAuto.isChecked():
             self.rAuto.setChecked(True)
         else:
