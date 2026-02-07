@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # −*− coding:utf-8 −*−
 
-import sys, os, time
+import sys, os, time, argparse
 import numpy as np
 import pyqtgraph as pg
 import matplotlib as mpl
@@ -28,7 +28,7 @@ class Data_Monitor(QMainWindow):
     pg.setConfigOptions(background=bgcolor, foreground=fgcolor, antialias=True, imageAxisOrder="row-major")
     def font_label(self, string): return "<span style=font-family:RobotoCondensed;font-size:14pt>" + string + "</span>"
 
-    def __init__(self, directory=None):
+    def __init__(self, directory=None, win_len=2000, n_average=10, puyuan_new=False):
         '''
         paint the user interface and establish the signal-socket connections
         directory:      location to be sought for data files
@@ -43,6 +43,9 @@ class Data_Monitor(QMainWindow):
         else:
             print("No directory provided as argument, using default.")
             self.directory = '/home/imsexp/data/'
+        self.win_len = win_len
+        self.n_average = n_average
+        self.puyuan_new = puyuan_new
         self.logarithm = self.rLog.isChecked()
         self.manual = self.rManual.isChecked()
         self.draw_plots()
@@ -323,7 +326,7 @@ class Data_Monitor(QMainWindow):
             return
         else:
             self.data_file = data_file
-        processing = Processing(self.directory+self.data_file)
+        processing = Processing(self.directory+self.data_file, self.puyuan_new)
         # extract acquisition parameters
         self.file_name = processing.fname
         self.timestamp = str(processing.date_time)
@@ -338,11 +341,11 @@ class Data_Monitor(QMainWindow):
         self.thread_pool.start(worker_t)
         # data in frequency domain, on another thread
         if self.n_sample <= 2.7e8: # number of IQ pairs <= 62.5M (data filesize <= 500MB), showing the full spectrum
-            worker_f = Worker(processing.time_average_2d, window_length=2000, n_frame=-1,
-                    padding_ratio=1, n_offset=0, n_average=10, estimator='p', window="kaiser", beta=14)
+            worker_f = Worker(processing.time_average_2d, window_length=self.win_len, n_frame=-1,
+                    padding_ratio=1, n_offset=0, n_average=self.n_average, estimator='p', window="kaiser", beta=14)
         else:
-            worker_f = Worker(processing.time_average_2d, window_length=2000, n_frame=-1,
-                    padding_ratio=1, n_offset=0, n_average=int(self.n_sample/window_length/3125), estimator='p', window="kaiser", beta=14)
+            worker_f = Worker(processing.time_average_2d, window_length=self.win_len, n_frame=-1,
+                    padding_ratio=1, n_offset=0, n_average=int(self.n_sample/self.win_len/3125), estimator='p', window="kaiser", beta=14)
         worker_f.signals.result.connect(self.redraw_frequency_plots)
         self.thread_pool.start(worker_f)
         # status bar changes only if two threads both terminate
@@ -411,13 +414,23 @@ class Data_Monitor(QMainWindow):
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Data Monitor GUI")
+    parser.add_argument("directory", nargs='?', default=None, help="Input directory path")
+    parser.add_argument("--win_len", "-wl", type=int, default=2000, help="Window length of FFT (default: 2000)")
+    parser.add_argument("--n_average", "-avg", type=int, default=10, help="Average of each frame (default: 10)")
+    parser.add_argument("--puyuan_new", "-pn", type=bool, default=False, help="Using puyuan's new device or not (default: False)")
+
+    args = parser.parse_args()
     app = QApplication(sys.argv)
     
-    if len(sys.argv) > 1:
-        input_directory = sys.argv[1]
-        data_monitor = Data_Monitor(directory=input_directory)
+    if args.directory:
+        data_monitor = Data_Monitor(
+                directory=args.directory,
+                win_len=args.win_len,
+                n_average=args.n_average,
+                puyuan_new=args.puyuan_new)
     else:
-        print("Usage: python3 monitor.py [directory_path]")
+        print("Usage: python3 monitor.py [directory_path] [--win_len WINDOW_LENGTH] [--n_average N_AVERAGE] [--puyuan_new True/False]")
         data_monitor = Data_Monitor()
 
     data_monitor.show()

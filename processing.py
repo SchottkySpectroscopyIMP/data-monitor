@@ -16,12 +16,12 @@ class Processing(Preprocessing):
 
     n_thread = multiprocessing.cpu_count() # number of CPU cores
 
-    def __init__(self, file_str):
+    def __init__(self, file_str, puyuan_new):
         '''
         the .wvh file should reside in the same directory where the .wvd file is found
         '''
         try:
-            super().__init__(file_str)
+            super().__init__(file_str, puyuan_new)
         except FileNotFoundError:
             print("Error: cannot find the files!\nPlease check the input file name.")
             sys.exit()
