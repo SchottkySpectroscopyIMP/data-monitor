@@ -31,7 +31,7 @@ def read_sua_header256(header_data, puyuan_new):
             'total_len': fields[10],
             'reserved1': fields[11],
             'reserved2': fields[12],
-            'center_frequency': fields[13], # [kHz]
+            'center_frequency': fields[13], # [MHz]
             'span': fields[14], # [kHz]
             'sampling_rate': fields[15], # [kHz]
             'date_time': '{:04d}-{:02d}-{:02d}T{:02d}:{:02d}:{:02d}'.format(fields[26], fields[25], fields[24], fields[23], fields[22], fields[21]),
@@ -215,7 +215,7 @@ class Preprocessing(object):
             self.sampling_rate = header_data['sampling_rate'] * 1e3
             self.span = header_data['span'] * 1e3
             self.gain = 1.0
-            self.center_frequency = header_data['center_frequency']
+            self.center_frequency = header_data['center_frequency'] * 1e6
             try:
                 self.date_time = np.datetime64(header_data['date_time'])
             except:
