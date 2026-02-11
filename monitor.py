@@ -9,7 +9,8 @@ from PyQt5.QtCore import *
 from PyQt5.QtWidgets import *
 from PyQt5.QtGui import *
 from PyQt5.uic import *
-from processing import Processing
+from preprocessing import Preprocessing
+from psd_array import psd_array_welch 
 from multithread import Worker
 
 class Data_Monitor(QMainWindow):
@@ -326,26 +327,27 @@ class Data_Monitor(QMainWindow):
             return
         else:
             self.data_file = data_file
-        processing = Processing(self.directory+self.data_file, self.puyuan_new)
+        bud = Preprocessing(self.directory+self.data_file, self.puyuan_new)
         # extract acquisition parameters
-        self.file_name = processing.fname
-        self.timestamp = str(processing.date_time)
-        self.ref_level = processing.ref_level # dBm
-        self.sampling_rate = processing.sampling_rate / 1e3 # kHz
-        self.n_sample = processing.n_sample # IQ pairs
-        self.span = processing.span
-        self.center_frequency = processing.center_frequency
+        self.file_name = bud.fname
+        self.timestamp = str(bud.date_time)
+        self.ref_level = bud.ref_level if os.path.splitext(self.data_file)[1] != '.data' else 0 # dBm
+        self.sampling_rate = bud.sampling_rate / 1e3 # kHz
+        self.n_sample = bud.n_sample # IQ pairs
+        self.span = bud.span # Hz
+        self.center_frequency = bud.center_frequency # Hz
         # data in time domain, on a spin-off thread
-        worker_t = Worker(super(Processing, processing).diagnosis, n_point=10**5, draw=False)
+        worker_t = Worker(bud.diagnosis, n_point=10**5, draw=False)
         worker_t.signals.result.connect(self.redraw_time_plots)
         self.thread_pool.start(worker_t)
         # data in frequency domain, on another thread
         if self.n_sample <= 2.7e8: # number of IQ pairs <= 62.5M (data filesize <= 500MB), showing the full spectrum
-            worker_f = Worker(processing.time_average_2d, window_length=self.win_len, n_frame=-1,
-                    padding_ratio=1, n_offset=0, n_average=self.n_average, estimator='p', window="kaiser", beta=14)
+            worker_f = Worker(psd_array_welch, bud=bud, offset=0, window_length=self.win_len, 
+                    n_average=self.n_average, overlap_ratio=0.65, n_frame=-1, n_hop=0, padding_ratio=0, window="kaiser", beta=14)
         else:
-            worker_f = Worker(processing.time_average_2d, window_length=self.win_len, n_frame=-1,
-                    padding_ratio=1, n_offset=0, n_average=int(self.n_sample/self.win_len/3125), estimator='p', window="kaiser", beta=14)
+            print("file too large, set n_average = {:d}".format(int(self.n_sample/self.win_len/3125)))
+            worker_f = Worker(psd_array_welch, bud=bud, offset=0, window_length=self.win_len, 
+                    n_average=int(self.n_sample/self.win_len/3125), overlap_ratio=0.65, n_frame=-1, n_hop=0, padding_ratio=0, window="kaiser", beta=14)
         worker_f.signals.result.connect(self.redraw_frequency_plots)
         self.thread_pool.start(worker_f)
         # status bar changes only if two threads both terminate
@@ -384,13 +386,13 @@ class Data_Monitor(QMainWindow):
         '''
         redraw the frequency spectrum and spectrogram
         '''
-        frequencies, self.times_f, spectrogram = args[:3] # kHz, s, V^2/kHz
+        frequencies, self.times_f, spectrogram = args[:3] # Hz, s, V^2/kHz
         self.times_f = (self.times_f[:-1] + self.times_f[1:])/2
         spectrogram = np.abs(spectrogram[1:] - spectrogram[:-1])
-        index_l = np.argmin(np.abs(frequencies+self.span/2e3))
-        index_r = np.argmin(np.abs(frequencies-self.span/2e3)) + 1
-        self.frequencies = frequencies[index_l:index_r] # kHz
-        spectrogram = spectrogram[:,index_l:index_r-1] # V^2/kHz
+        index_l = np.argmin(np.abs(frequencies/1e3+self.span/2e3))
+        index_r = np.argmin(np.abs(frequencies/1e3-self.span/2e3)) + 1
+        self.frequencies = frequencies[index_l:index_r]/1e3 # kHz
+        spectrogram = spectrogram[:,index_l:index_r-1]*1e-3 # V^2/kHz
         self.spectrogram = np.log10(spectrogram) if self.logarithm else spectrogram
         self.frame = 0
         self.fill_level = np.floor(np.min(self.spectrogram[self.frame])) if self.logarithm else 0
