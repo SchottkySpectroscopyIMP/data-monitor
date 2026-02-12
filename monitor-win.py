@@ -68,7 +68,7 @@ class Data_Monitor(QMainWindow):
     pg.setConfigOptions(background=bgcolor, foreground=fgcolor, antialias=True, imageAxisOrder="row-major")
     def font_label(self, string): return "<span style=font-family:RobotoCondensed;font-size:14pt>" + string + "</span>"
 
-    def __init__(self, directory=None, win_len=2000, n_average=10, puyuan_new=False):
+    def __init__(self, directory=None, win_len=2000, n_average=10, puyuan_new=False, channel_id=["ch1", "ch2", "ch3", "ch4"]):
         '''
         paint the user interface and establish the signal-socket connections
         directory:      location to be sought for data files
@@ -86,6 +86,7 @@ class Data_Monitor(QMainWindow):
         self.win_len = win_len
         self.n_average = n_average
         self.puyuan_new = puyuan_new
+        self.channel_id = channel_id
         self.logarithm = self.rLog.isChecked()
         self.manual = self.rManual.isChecked()
         self.draw_plots()
@@ -128,7 +129,13 @@ class Data_Monitor(QMainWindow):
         # file list
         self.mFileList = QFileSystemModel()
         self.mFileList.setFilter(QDir.Files)
-        self.mFileList.setNameFilters(["*.wvd", "*.tiq", "*.TIQ","*.tdms", "*.data"])
+        if len(self.channel_id) < 4:
+            self.file_filters = ["*.wvd", "*.tiq", "*.TIQ", "*.tdms"]
+            for _ch_id in self.channel_id:
+                self.file_filters.append("*{:}_*.data".format(_ch_id))
+        else:
+            self.file_filters = ["*.wvd", "*.tiq", "*.TIQ", "*.tdms", "*.data"]
+        self.mFileList.setNameFilters(self.file_filters)
         self.mFileList.setNameFilterDisables(False)
         self.mFileList.sort(3, Qt.DescendingOrder) # sort by the fourth column, i.e. modified time
         self.vFileList.setModel(self.mFileList)
@@ -368,6 +375,7 @@ if __name__ == "__main__":
     parser.add_argument("--win_len", "-wl", type=int, default=2000, help="Window length of FFT (default: 2000)")
     parser.add_argument("--n_average", "-avg", type=int, default=10, help="Average of each frame (default: 10)")
     parser.add_argument("--puyuan_new", "-pn", type=bool, default=False, help="Using puyuan's new device or not (default: False)")
+    parser.add_argument("--channel_id", "-c", type=str, nargs='+', default=["ch1", "ch2", "ch3", "ch4"], help="Displaying puyuan's special channels, separated by space (e.g. --channel_id ch1 ch2)")
 
     args = parser.parse_args()
     app = QApplication(sys.argv)
@@ -377,9 +385,10 @@ if __name__ == "__main__":
                 directory=args.directory,
                 win_len=args.win_len,
                 n_average=args.n_average,
-                puyuan_new=args.puyuan_new)
+                puyuan_new=args.puyuan_new,
+                channel_id=args.channel_id)
     else:
-        print("Usage: python3 monitor.py [directory_path]")
+        print("Usage: python3 monitor.py [directory_path] [--win_len WINDOW_LENGTH] [--n_average N_AVERAGE] [--puyuan_new True/False] [--channel_id ch1 ch2 ...")
         data_monitor = Data_Monitor()
 
     data_monitor.show()
