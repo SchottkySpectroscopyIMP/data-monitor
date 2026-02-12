@@ -338,6 +338,7 @@ class Data_Monitor(QMainWindow):
         self.file_name = bud.fname
         self.timestamp = str(bud.date_time)
         self.ref_level = bud.ref_level if os.path.splitext(self.data_file)[1] != '.data' else 0 # dBm
+        overlap_ratio = 0.67 if os.path.splitext(self.data_file)[1] != '.data' else 0
         self.sampling_rate = bud.sampling_rate / 1e3 # kHz
         self.n_sample = bud.n_sample # IQ pairs
         self.span = bud.span # Hz
@@ -349,11 +350,11 @@ class Data_Monitor(QMainWindow):
         # data in frequency domain, on another thread
         if self.n_sample <= 2.7e8: # number of IQ pairs <= 62.5M (data filesize <= 500MB), showing the full spectrum
             worker_f = Worker(psd_array_welch, bud=bud, offset=0, window_length=self.win_len, 
-                    n_average=self.n_average, overlap_ratio=0.65, n_frame=-1, n_hop=0, padding_ratio=0, window="kaiser", beta=14)
+                    n_average=self.n_average, overlap_ratio=overlap_ratio, n_frame=-1, n_hop=0, padding_ratio=0, window="kaiser", beta=14)
         else:
             print("file too large, set n_average = {:d}".format(int(self.n_sample/self.win_len/3125)))
             worker_f = Worker(psd_array_welch, bud=bud, offset=0, window_length=self.win_len, 
-                    n_average=int(self.n_sample/self.win_len/3125), overlap_ratio=0.65, n_frame=-1, n_hop=0, padding_ratio=0, window="kaiser", beta=14)
+                    n_average=int(self.n_sample/self.win_len/3125), overlap_ratio=overlap_ratio, n_frame=-1, n_hop=0, padding_ratio=0, window="kaiser", beta=14)
         worker_f.signals.result.connect(self.redraw_frequency_plots)
         self.thread_pool.start(worker_f)
         # status bar changes only if two threads both terminate
