@@ -180,7 +180,7 @@ class Data_Monitor(QMainWindow):
             self.gSpectrum.setXRange(*current_range, padding=0)
         self.rLin.toggled.connect(on_toggled_scale)
         # recreate file list for NAS reader at Linux server
-        if len(self.channel_id) < 4:
+        if self.puyuan_new and len(self.channel_id) < 4:
             self.file_filters = ["*.wvd", "*.tiq", "*.TIQ", "*.tdms"]
             for _ch_id in self.channel_id:
                 self.file_filters.append("*{:}_*.data".format(_ch_id))

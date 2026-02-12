@@ -129,7 +129,7 @@ class Data_Monitor(QMainWindow):
         # file list
         self.mFileList = QFileSystemModel()
         self.mFileList.setFilter(QDir.Files)
-        if len(self.channel_id) < 4:
+        if self.puyuan_new and len(self.channel_id) < 4:
             self.file_filters = ["*.wvd", "*.tiq", "*.TIQ", "*.tdms"]
             for _ch_id in self.channel_id:
                 self.file_filters.append("*{:}_*.data".format(_ch_id))
