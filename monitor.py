@@ -80,6 +80,7 @@ class Data_Monitor(QMainWindow):
                 left=self.font_label("Power Spectral Density"), bottom=self.font_label("Frequency − ___ MHz [kHz]"))
         self.gSpectrum.setRange(xRange=(self.frequencies[0], self.frequencies[-1]), yRange=(self.times_f[0], self.times_f[-1]))
         # frequency plots --- spectrogram
+        self.gSpectrogram = self.gSpectrogramWithBar.addPlot()
         self.img = pg.ImageItem(self.spectrogram)
         self.img.setRect(QRectF(-(self.frequencies[-1]-self.frequencies[0])/2, self.times_f[0],
             self.frequencies[-1]-self.frequencies[0], self.times_f[-1]-self.times_f[0]))
@@ -87,6 +88,10 @@ class Data_Monitor(QMainWindow):
         self.gSpectrogram.addItem(self.img)
         self.gSpectrogram.setLabels(left=self.font_label("Time [s]"), bottom=self.font_label("Frequency − ___ MHz [kHz]"))
         self.gSpectrogram.setRange(xRange=(self.frequencies[0], self.frequencies[-1]), yRange=(self.times_f[0], self.times_f[-1]))
+        # frequency plots --- colorbar for spectrogram
+        self.bar = pg.ColorBarItem(colorMap='viridis', label='Power Spectral Density [arb. unit]', rounding=0.00001, width=20, limits=(None,None))
+        self.bar.setImageItem(self.img)
+        self.gSpectrogramWithBar.addItem(self.bar)
         # file list -- replace QFileSystemModel with QStandardItemModel
         self.mFileList = QStandardItemModel(0,1)
         self.mFileList.setHeaderData(0, Qt.Horizontal, "Filename")
@@ -172,6 +177,7 @@ class Data_Monitor(QMainWindow):
             else:
                 self.spectrogram = np.power(10, self.spectrogram)
             self.img.setImage(self.spectrogram)
+            self.bar.setLevels(low=np.min(self.spectrogram), high=np.max(self.spectrogram))
             self.fill_level = np.floor(np.min(self.spectrogram[self.frame])) if self.logarithm else 0
             self.gSpectrum.listDataItems()[0].setData((self.frequencies[:-1]+self.frequencies[1:])/2, self.spectrogram[self.frame])
             self.gSpectrum.listDataItems()[0].setFillLevel(self.fill_level)
@@ -399,7 +405,7 @@ class Data_Monitor(QMainWindow):
         index_l = np.argmin(np.abs(frequencies/1e3+self.span/2e3))
         index_r = np.argmin(np.abs(frequencies/1e3-self.span/2e3)) + 1
         self.frequencies = frequencies[index_l:index_r]/1e3 # kHz
-        spectrogram = spectrogram[:,index_l:index_r-1]*1e-3 # V^2/kHz
+        spectrogram = spectrogram[:,index_l:index_r-1]*1e3 # V^2/mHz
         self.spectrogram = np.log10(spectrogram) if self.logarithm else spectrogram
         self.frame = 0
         self.fill_level = np.floor(np.min(self.spectrogram[self.frame])) if self.logarithm else 0
@@ -414,6 +420,8 @@ class Data_Monitor(QMainWindow):
             self.frequencies[-1]-self.frequencies[0], self.times_f[-1]-self.times_f[0]))
         self.gSpectrogram.setLabels(bottom=self.font_label("Frequency − {:g} MHz [kHz]".format(self.center_frequency/1e6)))
         self.gSpectrogram.setRange(xRange=(-self.span/2e3, self.span/2e3), yRange=(self.times_f[0], self.times_f[-1]))
+        # frequency plots --- colorbar
+        self.bar.setLevels(low=np.min(self.spectrogram), high=np.max(self.spectrogram))
         # reset markers
         self.crosshair_h.setValue(self.fill_level)
         self.crosshair_v.setValue(0)
