@@ -89,6 +89,7 @@ class Data_Monitor(QMainWindow):
         self.channel_id = channel_id
         self.logarithm = self.rLog.isChecked()
         self.manual = self.rManual.isChecked()
+        self.trigger_show = self.rTrigger.isChecked()
         self.draw_plots()
         self.build_connections()
 
@@ -131,6 +132,8 @@ class Data_Monitor(QMainWindow):
         self.bar = pg.ColorBarItem(colorMap='viridis', label='Power Spectral Density [arb. unit]', rounding=0.00001, width=20, limits=(None, None))
         self.bar.setImageItem(self.img)
         self.gSpectrogramWithBar.addItem(self.bar)
+        # frequency plots --- trigger line
+        self.trigger_lines = []
         # file list
         self.mFileList = QFileSystemModel()
         self.mFileList.setFilter(QDir.Files)
@@ -273,6 +276,17 @@ class Data_Monitor(QMainWindow):
         else:
             self.mFileList.rowsInserted.connect(last_file)
             self.mFileList.rowsRemoved.connect(last_file)
+        def on_toggled_trigger():
+            self.trigger_show = self.rTrigger.isChecked()
+            if self.trigger_show:
+                if len(self.trigger_lines) > 0:
+                    for _trigger_line in self.trigger_lines:
+                        _trigger_line.show()
+            else:
+                if len(self.trigger_lines) > 0:
+                    for _trigger_line in self.trigger_lines:
+                        _trigger_line.hide()
+        self.rTrigger.toggled.connect(on_toggled_trigger)
         # Ctrl+W or Ctrl+Q to quit the application
         shortcutW = QShortcut(QKeySequence.Close, self)
         shortcutQ = QShortcut(QKeySequence.Quit, self)
@@ -287,7 +301,7 @@ class Data_Monitor(QMainWindow):
             return
         else:
             self.data_file = data_file
-        bud = Preprocessing(self.directory+self.data_file, self.puyuan_new)
+        bud = Preprocessing(self.directory+self.data_file, puyuan_new=self.puyuan_new, abs_trigger=False)
         # extract acquisition parameters
         self.file_name = bud.fname
         self.timestamp = str(bud.date_time)
@@ -297,6 +311,10 @@ class Data_Monitor(QMainWindow):
         self.n_sample = bud.n_sample # IQ pairs
         self.span = bud.span # Hz
         self.center_frequency = bud.center_frequency # Hz
+        if self.file_name[-4:] == 'data' and self.puyuan_new == True:
+            self.trigger_timestamp = np.array(bud.trigger_timestamp) * bud.data_len / bud.sampling_rate # return the trigger timestamp from packets
+        else:
+            self.trigger_timestamp = []
         # data in time domain, on a spin-off thread
         worker_t = Worker(bud.diagnosis, n_point=10**5, draw=False)
         worker_t.signals.result.connect(self.redraw_time_plots)
@@ -370,6 +388,17 @@ class Data_Monitor(QMainWindow):
         self.gSpectrogram.setRange(xRange=(-self.span/2e3, self.span/2e3), yRange=(self.times_f[0], self.times_f[-1]))
         # frequency plots --- colorbar
         self.bar.setLevels(low=np.min(self.spectrogram), high=np.max(self.spectrogram))
+        # frequecny plots --- trigger line
+        if len(self.trigger_lines) > 0:
+            for _trigger_line in self.trigger_lines:
+                self.gSpectrogram.removeItem(_trigger_line)
+        self.trigger_lines = []
+        if len(self.trigger_timestamp) > 0:
+            for _trigger_timestamp in self.trigger_timestamp:
+                _trigger_line = self.gSpectrogram.plot(x=[-self.span/2e3, self.span/2e3], y=[_trigger_timestamp, _trigger_timestamp], pen=pg.mkPen(color='darkorange', width=2, style=Qt.DotLine))
+                self.trigger_lines.append(_trigger_line)
+                if not self.rTrigger.isChecked():
+                    _trigger_line.hide()
         # reset markers
         self.crosshair_h.setValue(self.fill_level)
         self.crosshair_v.setValue(0)

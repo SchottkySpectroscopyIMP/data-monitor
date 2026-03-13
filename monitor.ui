@@ -253,9 +253,22 @@ background-color: rgb(250, 250, 250);</string>
         </property>
        </widget>
       </item>
+      <item>
+       <widget class="QRadioButton" name="rTrigger">
+        <property name="font">
+          <font>
+            <family>Roboto Condensed</family>
+            <pointsize>12</pointsize>
+          </font>
+        </property>
+        <property name="text">
+         <string>Show Trigger Lines</string>
+        </property>
+       </widget>
+      </item>
      </layout>
     </item>
-   </layout>
+	</layout>
   </widget>
   <widget class="QMenuBar" name="menubar">
    <property name="geometry">
