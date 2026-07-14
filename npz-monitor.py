@@ -738,7 +738,7 @@ class DataMonitorWindow(QMainWindow):
             mouse_point = vb.mapSceneToView(pos)
             x_val = mouse_point.x()
             y_val = mouse_point.y()
-            self.statusBar.showMessage(f"Top Slice Plot -> Freq: {x_val:.4e} Hz | Y-Axis: {y_val:.4e}")
+            self.statusBar.showMessage(f"Top Slice Plot -> Freq: {x_val:.4f} Hz | Y-Axis: {y_val:.4e}")
 
     def on_bottom_mouse_moved(self, pos):
         if self.freqs is None:
@@ -748,7 +748,7 @@ class DataMonitorWindow(QMainWindow):
             mouse_point = vb.mapSceneToView(pos)
             x_val = mouse_point.x()
             y_val = mouse_point.y()
-            self.statusBar.showMessage(f"Bottom Slice Plot -> Freq: {x_val:.4e} Hz | Subtraction (Y-Axis): {y_val:.4e}")
+            self.statusBar.showMessage(f"Bottom Slice Plot -> Freq: {x_val:.4f} Hz | Subtraction (Y-Axis): {y_val:.4e}")
 
 
 # ==============================================================================
